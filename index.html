@@ -1,0 +1,291 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Graph test</title>
+    <style>
+        
+@import url(style.css);
+.node {
+  stroke: #000;
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.background {
+  fill:white;
+}
+.link {
+  stroke: #222;
+  stroke-opacity: .5;
+  marker-end: url(#end-arrow);
+}
+
+.nshadow {
+  color:white;
+}
+.label {
+  color:black;
+}
+</style>
+<script src="cola.v3.min.js"></script>
+<script src="d3.v3.js"></script>
+<script src="jquery-2.1.1.min.js"></script>
+
+</head>
+<body>
+  <div id="nodeInfo" class="nodeData">
+  </div>
+  <div class="toolbox">
+    <select class="seljson">
+      <option value="">
+        Select one
+      </option>
+      <option value="paj/Chesapeake.paj.json">
+        Chesapeake
+      </option>
+      <option value="paj/Everglades.paj.json">
+        Everglades
+      </option>
+      <option value="paj/Maspalomas.paj.json">
+        Maspalomas
+      </option>
+      <option value="paj/Mondego.paj.json">
+        Mondego
+      </option>
+      <option value="paj/Rhode.paj.json">
+        Rhode
+      </option>      <option value="paj/CrystalC.paj.json">
+        CrystalC
+      </option>
+      <option value="paj/ChesLower.paj.json">
+        ChesLower
+      </option>
+      <option value="paj/ChesUpper.paj.json">
+        ChesUpper
+      </option>
+      <option value="paj/ChesMiddle.paj.json">
+        ChesMiddle
+      </option>
+      <option value="paj/CrystalD.paj.json">
+        CrystalD
+      </option>
+      <option value="paj/Florida.paj.json">
+        Florida
+      </option>
+      <option value="paj/Michigan.paj.json">
+        Michigan
+      </option>
+      <option value="paj/Narragan.paj.json">
+        Narragan
+      </option>
+      <option value="paj/StMarks.paj.json">
+        StMarks
+      </option>
+    </select>
+  </div>
+<script>
+
+function initGraph(width, height, graph, containerSelector, nodeInfoElement){
+    graph.vertices.forEach(function(node) { node.outw = 0; node.inw = 0; });
+    graph.links.forEach(function(link) { graph.vertices[link.source].outw++; graph.vertices[link.target].inw++; });
+    var nodeInfo = Object.keys(graph.vertices[1]);
+    
+    var color = d3.scale.category20();
+    var micola = cola.d3adaptor()
+        .avoidOverlaps(true)
+        .size([width, height]);
+
+    var svg = d3.select(containerSelector).append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("pointer-events", "all");
+    svg.append('rect')
+        .attr('class', 'background')
+        .attr('width', "100%")
+        .attr('height', "100%")
+        .call(d3.behavior.zoom().on("zoom", redraw));
+    var nodeMouseDown = false;
+    
+    // Marker
+    svg.append('svg:defs').append('svg:marker')
+    .attr('id', 'end-arrow')
+    .attr('viewBox', '0 -5 10 10')
+    .attr('refX', 20)
+    .attr('markerWidth', 2)
+    .attr('markerHeight', 2)
+    .attr('orient', 'auto')
+    .append('svg:path')
+      .attr('d', 'M0,-5L10,0L0,5')
+      .attr('stroke-width', '0px')
+      .attr('fill', '#333')
+      .style('opacity', '0.5');
+    // End Marker
+    
+    var vis = svg
+        .append('g');
+    var edgesLayer = vis.append("g");
+    var nodesLayer = vis.append("g");
+    var graphLabels = vis.append('g').attr('class','grp gLabels')
+    
+    function redraw() {
+        if (nodeMouseDown) return;
+        vis.attr("transform", "translate(" + d3.event.translate + ")" + " scale(" + d3.event.scale + ")");
+    }
+
+    function expScale(input) {
+        return 1 - Math.exp(-input*40);
+    }
+    
+    function nodeClick(node, graph) {
+        graph.vertices[node.globalIndex].disconnect = ! graph.vertices[node.globalIndex].disconnect && true;
+        update(graph);
+    }
+    
+    function showNodeInfo( node, nodeInfo, nodeInfoElement, graph) {
+        $(nodeInfoElement).empty();
+        $(nodeInfoElement).append("<h2>Node information</h2>");
+        nodeInfo.forEach(function(item,i) {
+            $(nodeInfoElement).append("<div><b>"+(graph.termsLookup[item] || item)+": </b>" + "<span class='data'>" + node[item] +" </span></div>");
+        });
+        var showOnlyNode = $("<button>Show only this node</button>");
+        $(nodeInfoElement).append(showOnlyNode);
+        showOnlyNode.click(function() { focusNode(node.globalIndex, graph); });
+    }
+
+    function focusNode(nodeIndex, graph)
+    {
+        graph.connected_v = 0;
+        for(var i=0; i<graph.vertices.length; i++) {
+            graph.vertices[i].disconnect = true;
+        }
+        graph.links.forEach(function(d) {
+            if (d.target.globalIndex == nodeIndex || d.source.globalIndex == nodeIndex)
+            {
+                graph.vertices[d.source.globalIndex].disconnect = false;
+                graph.vertices[d.target.globalIndex].disconnect = false;
+                graph.connected_v ++;
+            }
+        });
+        update(graph);
+    }
+    
+    function update(graph) {
+      
+        graph.visible_links = graph.links.length;
+        links = graph.links.filter( function(d)
+          {
+              if(!d.source.disconnect && !d.target.disconnect)
+              {
+                  graph.visible_links--;
+                  return true;
+              }
+              return false;
+          });
+        vertices = graph.vertices;
+        
+        micola
+            .nodes(vertices)
+            .links(links)
+            .symmetricDiffLinkLengths(25)
+            .start(300);
+        
+        var maxStrokeWidth = d3.max(graph.links, function(d) {return d.weight});
+        var minStrokeWidth = d3.min(graph.links, function(d) {return d.weight});
+        var dynRangeStrokeWidth = 5;
+        var getStrokeWidth = function(weight) {
+          return (weight-minStrokeWidth)/(maxStrokeWidth - minStrokeWidth) * dynRangeStrokeWidth + 1;
+        };
+        
+        var maxRadius = d3.max(graph.vertices, function(d) {return d.v_bio});
+        var minRadius = d3.min(graph.vertices, function(d) {return d.v_bio});
+        var dynRangeRadius = 15;
+        var getRadius = function(weight) {
+          return expScale((weight-minRadius)/(maxRadius - minRadius) ) * dynRangeRadius + 4;
+        };
+        
+        var link = edgesLayer.selectAll(".link")
+            .data(links, function(d) {return d.source.globalIndex + "-" + d.target.globalIndex;});
+        
+        link.enter().append("line")
+            .attr("class", "link")
+            .style("stroke-width", function (d) { return getStrokeWidth(d.weight); });
+        
+        link.exit().remove();
+        
+        var node = nodesLayer.selectAll(".node")
+            .data(vertices, function(d){return d.globalIndex;});
+        node.enter().append("circle")
+            .classed("node", true)
+            .attr("r", function(d) { d.radius = getRadius(d.v_bio); d.width=d.radius*2; d.height=d.radius*2; return d.radius})
+            .style("fill", function (d) { return color(d.part_ECO); })
+            .call(micola.drag)
+            .on("mousedown", function () { nodeMouseDown = true; })
+            .on("mouseup", function () { nodeMouseDown = false; })
+            .on("dblclick", function(d) { nodeClick(d, graph) })
+            .on("mouseover", function (d) { showNodeInfo(d, nodeInfo, nodeInfoElement, graph); });
+        node.exit().remove();
+        
+        node.append("title")
+            .text(function (d) { return d.name; });
+        
+        micola.on("tick", function () {
+            node.attr("cx", function (d) { return d.x; })
+                .attr("cy", function (d) { return d.y; });
+            
+            links.forEach(function(d, i) {
+                d.dx = -(d.source.x - d.target.x);
+                d.dy = -(d.source.y -d.target.y);
+                d.dist = Math.sqrt(d.dx*d.dx + d.dy*d.dy);
+            });
+            
+            link.attr("x1", function (d) { return d.source.x; })
+                .attr("y1", function (d) { return d.source.y; })
+                .attr("x2", function (d) { return d.target.x - (d.dist>0? (d.dx * (d.target.radius)/d.dist ) : 0); })
+                .attr("y2", function (d) { return d.target.y - (d.dist>0? (d.dy * (d.target.radius)/d.dist ) : 0); });
+        });
+    }
+    
+    update(graph);
+    return svg;
+}
+
+var svgElement = null;
+function loadJson(url) {
+    if (svgElement)
+    {
+        $(svgElement[0][0]).remove();
+    }
+    d3.json(url, function (error, graph) {
+        graph.termsLookup = {
+            "v_bio" : "Biomass",
+            "outw" : "Outward links",
+            "inw" : "Inward links",
+            "part_ECO": "ECO Type",
+            "name" : "Name"
+        }
+        graph.vertices.forEach(function(item, index) { item.globalIndex = index });
+        svgElement = initGraph($("body").width(), $("body").height(), graph, "body", $("#nodeInfo"));
+    });
+}
+
+$(function() {
+    $("select.seljson").change(function( ){
+        jsonfile = $(this).val();
+        loadJson(jsonfile);
+    })
+});
+</script>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-53452238-3', 'auto');
+  ga('send', 'pageview');
+
+</script>
+</body>
+</html>
